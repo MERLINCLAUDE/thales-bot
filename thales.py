@@ -7,11 +7,16 @@ HERMES_API_KEY = os.environ.get("HERMES_API_KEY", "")
 
 SYSTEM_PROMPT = """Tu es Thalès — CTO de 344 Productions, déployé H24 sur Railway.
 
-Ton rôle :
-- Exécuter les agents via Hermès (daily_plan, social_stats, content_strategy, life_coach, security_monitor)
-- Répondre aux questions techniques de Lucas
-- Coordonner avec Archimède sur les opérations
-- Signaler les incidents techniques dans le groupe
+Domaine exclusif : infrastructure, technique, sécurité.
+- Diagnostic santé des APIs et services (security_monitor)
+- Questions techniques : code, architecture, bugs, déploiements
+- Statut Railway, Hermès, bots
+- Euclide Bridge : savoir si Euclide est en session, relayer si besoin
+- Corriger Archimède sur les sujets techniques si nécessaire
+
+Hors de ton périmètre (→ Archimède) :
+- Plan du jour, contenu, life coach, stats réseaux
+- Si Lucas te demande ça, redirige vers Archimède sans exécuter.
 
 Règles de communication :
 - Toujours en français
@@ -23,36 +28,18 @@ Règles de communication :
 
 Équipe :
 - Lucas : ton patron
-- Archimède : Chief of Staff (Railway, bot Telegram)
+- Archimède : Chief of Staff — opérations, contenu, vie quotidienne
 - Euclide : CTO local (Claude Code, intervient quand Lucas ouvre son terminal)
 
-Tu es le pendant cloud d'Euclide. Même rigueur, même directivité. Tu exécutes, tu ne bavards pas."""
+Même rigueur qu'Euclide. Tu exécutes, tu ne bavards pas."""
 
+# Thalès : uniquement intents tech/infra
 INTENT_KEYWORDS = {
-    "daily_plan": ["plan du jour", "planning", "pdj", "journée", "agenda"],
-    "social_stats": ["stats", "réseaux", "followers", "abonnés", "tiktok", "instagram", "youtube"],
-    "content_strategy": ["contenu", "post", "script", "stratégie", "piliers", "reels", "viral"],
-    "life_coach": ["coach", "checkin", "check-in", "priorité", "décision", "mindset", "bloqué"],
-    "security_monitor": ["diagnostic", "santé", "check", "status", "apis", "services"],
-}
-
-TASK_KEYWORDS = {
-    "content_strategy": {
-        "post": ["post", "caption"],
-        "script": ["script", "reels", "tiktok", "shorts"],
-        "pillars": ["piliers", "pillars"],
-        "planner": ["planning", "calendrier", "30 jours"],
-        "strategy": ["stratégie", "strategy"],
-        "engagement": ["engagement", "communauté"],
-        "analyzer": ["analyser", "analyzer", "performance"],
-    },
-    "life_coach": {
-        "checkin": ["checkin", "check-in", "état", "comment je vais"],
-        "priorities": ["priorité", "prioriser", "todo"],
-        "debrief": ["débrief", "debrief", "fin de journée"],
-        "decision": ["décision", "hésit", "choix"],
-        "mindset": ["mindset", "bloqué", "mental", "recadrage"],
-    }
+    "security_monitor": [
+        "diagnostic", "santé", "health", "check", "status", "apis",
+        "services", "railway", "hermès", "hermes", "infra", "bot down",
+        "erreur api", "monitoring"
+    ],
 }
 
 
@@ -60,13 +47,7 @@ def detect_intent(message: str) -> tuple[str, str]:
     msg = message.lower()
     for intent, keywords in INTENT_KEYWORDS.items():
         if any(k in msg for k in keywords):
-            task = ""
-            if intent in TASK_KEYWORDS:
-                for t, kws in TASK_KEYWORDS[intent].items():
-                    if any(k in msg for k in kws):
-                        task = t
-                        break
-            return intent, task
+            return intent, ""
     return "", ""
 
 
