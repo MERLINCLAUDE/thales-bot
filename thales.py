@@ -2,7 +2,7 @@ import os
 import requests
 from memory import add as mem_add, get as mem_get
 
-HERMES_URL = os.environ.get("HERMES_URL", "http://hermes-api.railway.internal")
+HERMES_URL = os.environ.get("HERMES_URL", "http://hermes-api.railway.internal:8000")
 HERMES_API_KEY = os.environ.get("HERMES_API_KEY", "")
 
 SYSTEM_PROMPT = """Tu es Thalès — CTO de 344 Productions, déployé H24 sur Railway.

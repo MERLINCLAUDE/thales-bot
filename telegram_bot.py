@@ -1,9 +1,38 @@
 import os
+import threading
 import anthropic
+import uvicorn
+from fastapi import FastAPI
+from pydantic import BaseModel
+from typing import Optional
 from telegram import Update
 from telegram.ext import Application, MessageHandler, CommandHandler, filters, ContextTypes
 
 from thales import process_message
+
+# ─── API interne pour ask_thales (Archimède → Thalès) ────────────────────────
+_api = FastAPI(title="Thalès Internal API")
+
+
+class AskRequest(BaseModel):
+    question: str
+    context: Optional[str] = ""
+
+
+@_api.post("/ask")
+def api_ask(req: AskRequest):
+    result = process_message(req.question, chat_id=0)
+    return {"result": result}
+
+
+@_api.get("/health")
+def api_health():
+    return {"status": "ok", "service": "thales"}
+
+
+def _run_api():
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run(_api, host="0.0.0.0", port=port, log_level="warning")
 
 
 async def is_addressed(text: str) -> bool:
@@ -124,7 +153,13 @@ async def post_init(app: Application):
 def main():
     import time
     print("Thalès démarré — attente 15s pour libérer le polling...")
-    time.sleep(15)  # Laisse l'instance précédente mourir avant de démarrer
+    time.sleep(15)
+
+    # Démarrer l'API interne en background
+    api_thread = threading.Thread(target=_run_api, daemon=True)
+    api_thread.start()
+    print(f"API interne démarrée sur port {os.environ.get('PORT', 8000)}")
+
     app = Application.builder().token(TELEGRAM_TOKEN).post_init(post_init).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
