@@ -91,8 +91,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
 
     thinking = await update.message.reply_text("…")
+    chat_id = update.effective_chat.id
     try:
-        result = process_message(text)
+        result = process_message(text, chat_id)
         await thinking.edit_text(result)
     except Exception as e:
         await thinking.edit_text(f"❌ {str(e)[:200]}")

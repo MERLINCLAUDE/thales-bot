@@ -1,10 +1,11 @@
 import os
 import requests
+from memory import add as mem_add, get as mem_get
 
 HERMES_URL = os.environ.get("HERMES_URL", "http://hermes-api.railway.internal")
 HERMES_API_KEY = os.environ.get("HERMES_API_KEY", "")
 
-SYSTEM_PROMPT = """Tu es Thalès — CTO cloud de 344 Productions. Tu tournes H24 sur Railway.
+SYSTEM_PROMPT = """Tu es Thalès — CTO de 344 Productions, déployé H24 sur Railway.
 
 Ton rôle :
 - Exécuter les agents via Hermès (daily_plan, social_stats, content_strategy, life_coach, security_monitor)
@@ -84,20 +85,32 @@ def dispatch_to_hermes(intent: str, context: str = "", task: str = "") -> str:
         return f"❌ Hermès injoignable: {str(e)[:200]}"
 
 
-def ask_claude(message: str) -> str:
+def ask_claude(message: str, chat_id: int = 0) -> str:
     import anthropic
     client = anthropic.Anthropic()
+
+    history = mem_get(chat_id)
+    messages = history + [{"role": "user", "content": message}]
+
     resp = client.messages.create(
         model="claude-sonnet-4-6",
         max_tokens=512,
         system=SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": message}]
+        messages=messages
     )
-    return resp.content[0].text
+    reply = resp.content[0].text
+
+    mem_add(chat_id, "user", message)
+    mem_add(chat_id, "assistant", reply)
+
+    return reply
 
 
-def process_message(message: str) -> str:
+def process_message(message: str, chat_id: int = 0) -> str:
     intent, task = detect_intent(message)
     if intent:
-        return dispatch_to_hermes(intent, message, task)
-    return ask_claude(message)
+        result = dispatch_to_hermes(intent, message, task)
+        mem_add(chat_id, "user", message)
+        mem_add(chat_id, "assistant", result)
+        return result
+    return ask_claude(message, chat_id)
