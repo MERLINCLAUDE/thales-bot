@@ -5,9 +5,9 @@ from telegram.ext import Application, MessageHandler, CommandHandler, filters, C
 from thales import process_message
 
 TELEGRAM_TOKEN = os.environ["THALES_TELEGRAM_TOKEN"]
-ALLOWED_USER_ID = int(os.environ.get("ALLOWED_USER_ID", "0"))
-ORGA_GROUP_ID = int(os.environ.get("ORGA_GROUP_ID", "-5144754928"))
-ARCHIMEDE_BOT_ID = int(os.environ.get("ARCHIMEDE_BOT_ID", "0"))
+ALLOWED_USER_ID = int(os.environ.get("ALLOWED_USER_ID") or "0")
+ORGA_GROUP_ID = int(os.environ.get("ORGA_GROUP_ID") or "-5144754928")
+ARCHIMEDE_BOT_ID = int(os.environ.get("ARCHIMEDE_BOT_ID") or "0")
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
