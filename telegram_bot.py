@@ -6,6 +6,22 @@ from telegram.ext import Application, MessageHandler, CommandHandler, filters, C
 from thales import process_message
 
 
+async def is_addressed(text: str) -> bool:
+    """Détermine si ce message est adressé à Thalès (seul ou collectivement)."""
+    client = anthropic.AsyncAnthropic()
+    resp = await client.messages.create(
+        model="claude-haiku-4-5-20251001",
+        max_tokens=5,
+        system=(
+            "Tu es Thalès dans un groupe Telegram avec Archimède et Lucas. "
+            "Réponds uniquement OUI ou NON : ce message t'est-il adressé "
+            "(directement, collectivement, ou implicitement à toi ou aux bots du groupe) ?"
+        ),
+        messages=[{"role": "user", "content": text}]
+    )
+    return resp.content[0].text.strip().upper().startswith("OUI")
+
+
 async def maybe_correct(message: str) -> str | None:
     """Évalue si Thalès doit corriger/compléter un message d'un autre bot."""
     client = anthropic.AsyncAnthropic()
@@ -62,23 +78,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if chat_type in ("group", "supergroup"):
-        import re
-        TRIGGERS = ("thalès", "thales")
         bot_mentioned = any(
             e.type == "mention" and text[e.offset:e.offset + e.length] == f"@{context.bot.username}"
             for e in (update.message.entities or [])
-        )
-        msg_lower = text.lower().strip()
-        name_addressed = any(
-            re.match(rf'^{re.escape(kw)}[\s,!?:.]', msg_lower) or msg_lower == kw
-            for kw in TRIGGERS
         )
         replied_to_us = (
             update.message.reply_to_message and
             update.message.reply_to_message.from_user.id == context.bot.id
         )
-        if not bot_mentioned and not name_addressed and not replied_to_us:
-            return
+        if not bot_mentioned and not replied_to_us:
+            if not await is_addressed(text):
+                return
 
     thinking = await update.message.reply_text("…")
     try:
