@@ -95,8 +95,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def post_init(app: Application):
-    import asyncio
-    await asyncio.sleep(10)  # Laisse l'instance précédente mourir avant de poller
     try:
         await app.bot.send_message(
             chat_id=ORGA_GROUP_ID,
@@ -107,7 +105,9 @@ async def post_init(app: Application):
 
 
 def main():
-    print("Thalès démarré...")
+    import time
+    print("Thalès démarré — attente 15s pour libérer le polling...")
+    time.sleep(15)  # Laisse l'instance précédente mourir avant de démarrer
     app = Application.builder().token(TELEGRAM_TOKEN).post_init(post_init).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
