@@ -1,5 +1,5 @@
+import asyncio
 import os
-import threading
 import anthropic
 import uvicorn
 from fastapi import FastAPI
@@ -30,9 +30,12 @@ def api_health():
     return {"status": "ok", "service": "thales"}
 
 
-def _run_api():
+async def _run_api():
     port = int(os.environ.get("PORT", 8000))
-    uvicorn.run(_api, host="0.0.0.0", port=port, log_level="warning")
+    config = uvicorn.Config(_api, host="0.0.0.0", port=port, log_level="warning", loop="none")
+    server = uvicorn.Server(config)
+    print(f"API interne démarrée sur port {port}")
+    await server.serve()
 
 
 async def is_addressed(text: str) -> bool:
@@ -150,21 +153,25 @@ async def post_init(app: Application):
         print(f"⚠️ Groupe inaccessible: {e}")
 
 
-def main():
-    import time
+async def _run_bot():
     print("Thalès démarré — attente 15s pour libérer le polling...")
-    time.sleep(15)
+    await asyncio.sleep(15)
 
-    # Démarrer l'API interne en background
-    api_thread = threading.Thread(target=_run_api, daemon=True)
-    api_thread.start()
-    print(f"API interne démarrée sur port {os.environ.get('PORT', 8000)}")
+    tg_app = Application.builder().token(TELEGRAM_TOKEN).post_init(post_init).build()
+    tg_app.add_handler(CommandHandler("start", start))
+    tg_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    app = Application.builder().token(TELEGRAM_TOKEN).post_init(post_init).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    app.run_polling(drop_pending_updates=True)
+    async with tg_app:
+        await tg_app.start()
+        await tg_app.updater.start_polling(drop_pending_updates=True)
+        await asyncio.Event().wait()  # run forever
+        await tg_app.updater.stop()
+        await tg_app.stop()
+
+
+async def main():
+    await asyncio.gather(_run_api(), _run_bot())
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
