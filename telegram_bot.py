@@ -13,10 +13,11 @@ async def maybe_correct(message: str) -> str | None:
         model="claude-haiku-4-5-20251001",
         max_tokens=200,
         system=(
-            "Tu es Thalès, CTO cloud de 344 Productions. "
-            "Un autre bot vient de répondre dans le groupe. "
-            "Si tu vois une erreur factuelle ou une amélioration vraiment utile, corrige brièvement. "
-            "Si la réponse est correcte ou suffisante, réponds uniquement: SILENT"
+            "Tu es Thalès, CTO cloud de 344 Productions dans le groupe ORGA 344. "
+            "Archimède (Chief of Staff) vient d'envoyer un message. "
+            "Réponds si : (1) Archimède s'adresse à toi par ton nom (Thalès) ou te pose une question directe, "
+            "(2) tu vois une erreur factuelle à corriger. "
+            "Si le message ne te concerne pas, réponds uniquement: SILENT"
         ),
         messages=[{"role": "user", "content": message}]
     )
@@ -61,17 +62,22 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if chat_type in ("group", "supergroup"):
+        import re
         TRIGGERS = ("thalès", "thales")
         bot_mentioned = any(
             e.type == "mention" and text[e.offset:e.offset + e.length] == f"@{context.bot.username}"
             for e in (update.message.entities or [])
         )
-        name_mentioned = any(kw in text.lower() for kw in TRIGGERS)
+        msg_lower = text.lower().strip()
+        name_addressed = any(
+            re.match(rf'^{re.escape(kw)}[\s,!?:.]', msg_lower) or msg_lower == kw
+            for kw in TRIGGERS
+        )
         replied_to_us = (
             update.message.reply_to_message and
             update.message.reply_to_message.from_user.id == context.bot.id
         )
-        if not bot_mentioned and not name_mentioned and not replied_to_us:
+        if not bot_mentioned and not name_addressed and not replied_to_us:
             return
 
     thinking = await update.message.reply_text("…")
