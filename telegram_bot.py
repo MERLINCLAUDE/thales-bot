@@ -1,8 +1,27 @@
 import os
+import anthropic
 from telegram import Update
 from telegram.ext import Application, MessageHandler, CommandHandler, filters, ContextTypes
 
 from thales import process_message
+
+
+async def maybe_correct(message: str) -> str | None:
+    """Évalue si Thalès doit corriger/compléter un message d'un autre bot."""
+    client = anthropic.AsyncAnthropic()
+    resp = await client.messages.create(
+        model="claude-haiku-4-5-20251001",
+        max_tokens=200,
+        system=(
+            "Tu es Thalès, CTO cloud de 344 Productions. "
+            "Un autre bot vient de répondre dans le groupe. "
+            "Si tu vois une erreur factuelle ou une amélioration vraiment utile, corrige brièvement. "
+            "Si la réponse est correcte ou suffisante, réponds uniquement: SILENT"
+        ),
+        messages=[{"role": "user", "content": message}]
+    )
+    text = resp.content[0].text.strip()
+    return None if text == "SILENT" else text
 
 TELEGRAM_TOKEN = os.environ["THALES_TELEGRAM_TOKEN"]
 ALLOWED_USER_ID = int(os.environ.get("ALLOWED_USER_ID") or "0")
@@ -29,6 +48,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     text = update.message.text
     if not text:
+        return
+
+    # Correction mutuelle : si message d'un autre bot, évaluer si on corrige
+    if chat_type in ("group", "supergroup") and user_id in BOT_IDS:
+        # Pas de correction de correction (évite les boucles)
+        if update.message.reply_to_message and update.message.reply_to_message.from_user.id in BOT_IDS:
+            return
+        correction = await maybe_correct(text)
+        if correction:
+            await update.message.reply_text(correction)
         return
 
     if chat_type in ("group", "supergroup"):
