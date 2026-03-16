@@ -61,15 +61,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if chat_type in ("group", "supergroup"):
+        TRIGGERS = ("thalès", "thales")
         bot_mentioned = any(
             e.type == "mention" and text[e.offset:e.offset + e.length] == f"@{context.bot.username}"
             for e in (update.message.entities or [])
         )
+        name_mentioned = any(kw in text.lower() for kw in TRIGGERS)
         replied_to_us = (
             update.message.reply_to_message and
             update.message.reply_to_message.from_user.id == context.bot.id
         )
-        if not bot_mentioned and not replied_to_us:
+        if not bot_mentioned and not name_mentioned and not replied_to_us:
             return
 
     thinking = await update.message.reply_text("…")
