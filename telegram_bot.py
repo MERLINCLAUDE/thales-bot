@@ -95,6 +95,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def post_init(app: Application):
+    import asyncio
+    await asyncio.sleep(10)  # Laisse l'instance précédente mourir avant de poller
     try:
         await app.bot.send_message(
             chat_id=ORGA_GROUP_ID,
