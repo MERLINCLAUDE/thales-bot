@@ -7,14 +7,18 @@ from thales import process_message
 TELEGRAM_TOKEN = os.environ["THALES_TELEGRAM_TOKEN"]
 ALLOWED_USER_ID = int(os.environ.get("ALLOWED_USER_ID") or "0")
 ORGA_GROUP_ID = int(os.environ.get("ORGA_GROUP_ID") or "-5144754928")
-ARCHIMEDE_BOT_ID = int(os.environ.get("ARCHIMEDE_BOT_ID") or "0")
+
+# Bots autorisés — tous se voient
+EUCLIDE_BOT_ID = 8710667463
+ARCHIMEDE_BOT_ID = 8773159328
+BOT_IDS = {EUCLIDE_BOT_ID, ARCHIMEDE_BOT_ID}
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_type = update.effective_chat.type
     user_id = update.effective_user.id
 
-    allowed = {ALLOWED_USER_ID, ARCHIMEDE_BOT_ID}
+    allowed = {ALLOWED_USER_ID} | BOT_IDS
 
     if chat_type == "private" and ALLOWED_USER_ID and user_id not in allowed:
         await update.message.reply_text("❌ Accès non autorisé.")
