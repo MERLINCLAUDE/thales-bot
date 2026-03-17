@@ -1,6 +1,5 @@
 import asyncio
 import os
-import anthropic
 import uvicorn
 from fastapi import FastAPI
 from pydantic import BaseModel
@@ -38,89 +37,21 @@ async def _run_api():
     await server.serve()
 
 
-async def is_addressed(text: str) -> bool:
-    """Détermine si ce message est adressé à Thalès (seul ou collectivement)."""
-    client = anthropic.AsyncAnthropic()
-    resp = await client.messages.create(
-        model="claude-haiku-4-5-20251001",
-        max_tokens=5,
-        system=(
-            "Tu es Thalès dans un groupe Telegram avec Archimède et Lucas. "
-            "Réponds uniquement OUI ou NON : ce message t'est-il adressé "
-            "(directement, collectivement, ou implicitement à toi ou aux bots du groupe) ?"
-        ),
-        messages=[{"role": "user", "content": text}]
-    )
-    return resp.content[0].text.strip().upper().startswith("OUI")
-
-
-async def maybe_correct(message: str) -> str | None:
-    """Évalue si Thalès doit corriger/compléter un message d'un autre bot."""
-    client = anthropic.AsyncAnthropic()
-    resp = await client.messages.create(
-        model="claude-haiku-4-5-20251001",
-        max_tokens=200,
-        system=(
-            "Tu es Thalès, CTO cloud de 344 Productions dans le groupe ORGA 344. "
-            "Archimède (Chief of Staff) vient d'envoyer un message. "
-            "Réponds si : (1) Archimède s'adresse à toi par ton nom (Thalès) ou te pose une question directe, "
-            "(2) tu vois une erreur factuelle à corriger. "
-            "Si le message ne te concerne pas, réponds uniquement: SILENT"
-        ),
-        messages=[{"role": "user", "content": message}]
-    )
-    text = resp.content[0].text.strip()
-    return None if text == "SILENT" else text
-
 TELEGRAM_TOKEN = os.environ["THALES_TELEGRAM_TOKEN"]
 ALLOWED_USER_ID = int(os.environ.get("ALLOWED_USER_ID") or "0")
-ORGA_GROUP_ID = int(os.environ.get("ORGA_GROUP_ID") or "-5144754928")
-
-# Bots autorisés — tous se voient
-EUCLIDE_BOT_ID = 8710667463
-ARCHIMEDE_BOT_ID = 8773159328
-BOT_IDS = {EUCLIDE_BOT_ID, ARCHIMEDE_BOT_ID}
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_type = update.effective_chat.type
-    user_id = update.effective_user.id
-
-    allowed = {ALLOWED_USER_ID} | BOT_IDS
-
-    if chat_type == "private" and ALLOWED_USER_ID and user_id not in allowed:
-        await update.message.reply_text("❌ Accès non autorisé.")
+    if update.effective_chat.type != "private":
         return
 
-    if chat_type in ("group", "supergroup") and ALLOWED_USER_ID and user_id not in allowed:
+    if ALLOWED_USER_ID and update.effective_user.id != ALLOWED_USER_ID:
+        await update.message.reply_text("❌ Accès non autorisé.")
         return
 
     text = update.message.text
     if not text:
         return
-
-    # Correction mutuelle : si message d'un autre bot, évaluer si on corrige
-    if chat_type in ("group", "supergroup") and user_id in BOT_IDS:
-        # Pas de correction de correction (évite les boucles)
-        if update.message.reply_to_message and update.message.reply_to_message.from_user.id in BOT_IDS:
-            return
-        correction = await maybe_correct(text)
-        if correction:
-            await update.message.reply_text(correction)
-        return
-
-    if chat_type in ("group", "supergroup"):
-        bot_mentioned = any(
-            e.type == "mention" and text[e.offset:e.offset + e.length] == f"@{context.bot.username}"
-            for e in (update.message.entities or [])
-        )
-        replied_to_us = (
-            update.message.reply_to_message and
-            update.message.reply_to_message.from_user.id == context.bot.id
-        )
-        if not bot_mentioned and not replied_to_us:
-            if not await is_addressed(text):
-                return
 
     thinking = await update.message.reply_text("…")
     chat_id = update.effective_chat.id
@@ -134,23 +65,23 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "Thalès opérationnel.\n\n"
-        "• Plan du jour → *plan du jour*\n"
-        "• Stats → *stats*\n"
-        "• Contenu → *post/script/stratégie*\n"
-        "• Diagnostic → *diagnostic*\n\n"
+        "• Diagnostic → *diagnostic*\n"
+        "• Statut Railway → *status*\n"
+        "• Questions tech → directement\n\n"
         f"ID : `{update.effective_user.id}`",
         parse_mode="Markdown"
     )
 
 
 async def post_init(app: Application):
-    try:
-        await app.bot.send_message(
-            chat_id=ORGA_GROUP_ID,
-            text="Thalès en ligne. Tous les agents disponibles via Hermès."
-        )
-    except Exception as e:
-        print(f"⚠️ Groupe inaccessible: {e}")
+    if ALLOWED_USER_ID:
+        try:
+            await app.bot.send_message(
+                chat_id=ALLOWED_USER_ID,
+                text="Thalès en ligne."
+            )
+        except Exception as e:
+            print(f"⚠️ DM inaccessible: {e}")
 
 
 async def _run_bot():
