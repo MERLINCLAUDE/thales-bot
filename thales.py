@@ -5,6 +5,24 @@ from memory import add as mem_add, get as mem_get
 HERMES_URL = os.environ.get("HERMES_URL", "http://hermes-api.railway.internal:8000")
 HERMES_API_KEY = os.environ.get("HERMES_API_KEY", "")
 
+def _hermes_context_get() -> str:
+    """Lit la mémoire partagée inter-agents depuis Hermès."""
+    try:
+        r = requests.get(
+            f"{HERMES_URL}/context/get",
+            headers={"x-api-key": HERMES_API_KEY},
+            timeout=5
+        )
+        if r.status_code == 200 and r.json():
+            lines = []
+            for key, entry in r.json().items():
+                lines.append(f"• {key}: {entry['value']} (via {entry['source']})")
+            return "\n".join(lines)
+    except Exception:
+        pass
+    return ""
+
+
 SYSTEM_PROMPT = """Tu es Thalès — CTO de 344 Productions, déployé H24 sur Railway.
 
 Domaine exclusif : infrastructure, technique, sécurité.
@@ -73,10 +91,15 @@ def ask_claude(message: str, chat_id: int = 0) -> str:
     history = mem_get(chat_id)
     messages = history + [{"role": "user", "content": message}]
 
+    system = SYSTEM_PROMPT
+    shared_ctx = _hermes_context_get()
+    if shared_ctx:
+        system += f"\n\n[Contexte partagé inter-agents]\n{shared_ctx}"
+
     resp = client.messages.create(
         model="claude-sonnet-4-6",
         max_tokens=512,
-        system=SYSTEM_PROMPT,
+        system=system,
         messages=messages
     )
     reply = resp.content[0].text
