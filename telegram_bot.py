@@ -122,8 +122,27 @@ async def _register_thales():
         print(f"[hermes] Enregistrement erreur: {e}")
 
 
+async def _heartbeat_loop():
+    """Envoie un heartbeat à Hermès toutes les 30s."""
+    hermes_url = os.environ.get("HERMES_URL", "http://hermes-api.railway.internal:8000")
+    hermes_key = os.environ.get("HERMES_API_KEY", "")
+    while True:
+        try:
+            import requests
+            requests.post(
+                f"{hermes_url}/agents/heartbeat",
+                params={"name": "thales"},
+                headers={"x-api-key": hermes_key},
+                timeout=5
+            )
+        except Exception:
+            pass
+        await asyncio.sleep(30)
+
+
 async def main():
     await _register_thales()
+    asyncio.create_task(_heartbeat_loop())
     await asyncio.gather(_run_api(), _run_bot())
 
 
