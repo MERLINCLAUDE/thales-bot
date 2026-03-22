@@ -31,7 +31,7 @@ def api_health():
 
 async def _run_api():
     port = int(os.environ.get("PORT", 8000))
-    config = uvicorn.Config(_api, host="0.0.0.0", port=port, log_level="warning", loop="none")
+    config = uvicorn.Config(_api, host="0.0.0.0", port=port, log_level="warning")
     server = uvicorn.Server(config)
     print(f"API interne démarrée sur port {port}")
     await server.serve()
@@ -100,7 +100,30 @@ async def _run_bot():
         await tg_app.stop()
 
 
+async def _register_thales():
+    """Enregistre Thalès dans le registre d'agents Hermès."""
+    import requests
+    hermes_url = os.environ.get("HERMES_URL", "http://hermes-api.railway.internal:8000")
+    hermes_key = os.environ.get("HERMES_API_KEY", "")
+    try:
+        r = requests.post(
+            f"{hermes_url}/agents/register",
+            json={
+                "name": "thales",
+                "agent_type": "cloud",
+                "capabilities": ["infrastructure", "railway", "docker", "architecture", "code_review"],
+                "metadata": {"version": "1.0", "platform": "railway"}
+            },
+            headers={"x-api-key": hermes_key},
+            timeout=10
+        )
+        print(f"[hermes] Thalès enregistré ✅" if r.status_code == 200 else f"[hermes] Enregistrement échoué: {r.status_code}")
+    except Exception as e:
+        print(f"[hermes] Enregistrement erreur: {e}")
+
+
 async def main():
+    await _register_thales()
     await asyncio.gather(_run_api(), _run_bot())
 
 
