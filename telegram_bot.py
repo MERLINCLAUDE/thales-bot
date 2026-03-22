@@ -1,5 +1,6 @@
 import asyncio
 import os
+import aiohttp
 import uvicorn
 from fastapi import FastAPI
 from pydantic import BaseModel
@@ -19,8 +20,8 @@ class AskRequest(BaseModel):
 
 
 @_api.post("/ask")
-def api_ask(req: AskRequest):
-    result = process_message(req.question, chat_id=0)
+async def api_ask(req: AskRequest):
+    result = await process_message(req.question, chat_id=0)
     return {"result": result}
 
 
@@ -33,11 +34,11 @@ async def _run_api():
     port = int(os.environ.get("PORT", 8000))
     config = uvicorn.Config(_api, host="0.0.0.0", port=port, log_level="warning")
     server = uvicorn.Server(config)
-    print(f"API interne démarrée sur port {port}")
+    print(f"[thales] API interne démarrée sur port {port}")
     await server.serve()
 
 
-TELEGRAM_TOKEN = os.environ["THALES_TELEGRAM_TOKEN"]
+TELEGRAM_TOKEN = os.environ.get("THALES_TELEGRAM_TOKEN", "")
 ALLOWED_USER_ID = int(os.environ.get("ALLOWED_USER_ID") or "0")
 
 
@@ -56,7 +57,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     thinking = await update.message.reply_text("…")
     chat_id = update.effective_chat.id
     try:
-        result = process_message(text, chat_id)
+        result = await process_message(text, chat_id)
         await thinking.edit_text(result)
     except Exception as e:
         await thinking.edit_text(f"❌ {str(e)[:200]}")
@@ -81,11 +82,15 @@ async def post_init(app: Application):
                 text="Thalès en ligne."
             )
         except Exception as e:
-            print(f"⚠️ DM inaccessible: {e}")
+            print(f"[thales] ⚠️ DM inaccessible: {e}")
 
 
 async def _run_bot():
-    print("Thalès démarré — attente 15s pour libérer le polling...")
+    if not TELEGRAM_TOKEN:
+        print("[thales] ⚠️ THALES_TELEGRAM_TOKEN manquant — bot Telegram désactivé")
+        return
+
+    print("[thales] Bot démarré — attente 15s pour libérer le polling...")
     await asyncio.sleep(15)
 
     tg_app = Application.builder().token(TELEGRAM_TOKEN).post_init(post_init).build()
@@ -95,53 +100,64 @@ async def _run_bot():
     async with tg_app:
         await tg_app.start()
         await tg_app.updater.start_polling(drop_pending_updates=True)
-        await asyncio.Event().wait()  # run forever
+        await asyncio.Event().wait()
         await tg_app.updater.stop()
         await tg_app.stop()
 
 
 async def _register_thales():
-    """Enregistre Thalès dans le registre d'agents Hermès."""
-    import requests
     hermes_url = os.environ.get("HERMES_URL", "http://hermes-api.railway.internal:8000")
     hermes_key = os.environ.get("HERMES_API_KEY", "")
     try:
-        r = requests.post(
-            f"{hermes_url}/agents/register",
-            json={
-                "name": "thales",
-                "agent_type": "cloud",
-                "capabilities": ["infrastructure", "railway", "docker", "architecture", "code_review"],
-                "metadata": {"version": "1.0", "platform": "railway"}
-            },
-            headers={"x-api-key": hermes_key},
-            timeout=10
-        )
-        print(f"[hermes] Thalès enregistré ✅" if r.status_code == 200 else f"[hermes] Enregistrement échoué: {r.status_code}")
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{hermes_url}/agents/register",
+                json={
+                    "name": "thales",
+                    "agent_type": "cloud",
+                    "capabilities": ["infrastructure", "railway", "docker", "architecture", "code_review"],
+                    "metadata": {"version": "1.0", "platform": "railway"}
+                },
+                headers={"x-api-key": hermes_key},
+                timeout=aiohttp.ClientTimeout(total=10)
+            ) as r:
+                if r.status == 200:
+                    print("[thales] ✅ Enregistré auprès d'Hermès")
+                else:
+                    print(f"[thales] ⚠️ Enregistrement échoué: HTTP {r.status}")
     except Exception as e:
-        print(f"[hermes] Enregistrement erreur: {e}")
+        print(f"[thales] ⚠️ Enregistrement erreur: {e}")
 
 
 async def _heartbeat_loop():
-    """Envoie un heartbeat à Hermès toutes les 30s."""
     hermes_url = os.environ.get("HERMES_URL", "http://hermes-api.railway.internal:8000")
     hermes_key = os.environ.get("HERMES_API_KEY", "")
+    consecutive_failures = 0
     while True:
         try:
-            import requests
-            requests.post(
-                f"{hermes_url}/agents/heartbeat",
-                params={"name": "thales"},
-                headers={"x-api-key": hermes_key},
-                timeout=5
-            )
-        except Exception:
-            pass
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"{hermes_url}/agents/heartbeat",
+                    params={"name": "thales"},
+                    headers={"x-api-key": hermes_key},
+                    timeout=aiohttp.ClientTimeout(total=5)
+                ) as r:
+                    if r.status == 200:
+                        consecutive_failures = 0
+                    else:
+                        consecutive_failures += 1
+                        if consecutive_failures <= 3:
+                            print(f"[thales] ⚠️ Heartbeat échoué: HTTP {r.status}")
+        except Exception as e:
+            consecutive_failures += 1
+            if consecutive_failures <= 3:
+                print(f"[thales] ⚠️ Heartbeat erreur: {e}")
         await asyncio.sleep(30)
 
 
 async def main():
-    await _register_thales()
+    # Registration en background — ne bloque pas le startup
+    asyncio.create_task(_register_thales())
     asyncio.create_task(_heartbeat_loop())
     await asyncio.gather(_run_api(), _run_bot())
 

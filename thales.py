@@ -1,23 +1,26 @@
 import os
-import requests
+import aiohttp
 from memory import add as mem_add, get as mem_get
 
 HERMES_URL = os.environ.get("HERMES_URL", "http://hermes-api.railway.internal:8000")
 HERMES_API_KEY = os.environ.get("HERMES_API_KEY", "")
 
-def _hermes_context_get() -> str:
-    """Lit la mémoire partagée inter-agents depuis Hermès."""
+
+async def _hermes_context_get() -> str:
     try:
-        r = requests.get(
-            f"{HERMES_URL}/context/get",
-            headers={"x-api-key": HERMES_API_KEY},
-            timeout=5
-        )
-        if r.status_code == 200 and r.json():
-            lines = []
-            for key, entry in r.json().items():
-                lines.append(f"• {key}: {entry['value']} (via {entry['source']})")
-            return "\n".join(lines)
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"{HERMES_URL}/context/get",
+                headers={"x-api-key": HERMES_API_KEY},
+                timeout=aiohttp.ClientTimeout(total=5)
+            ) as r:
+                if r.status == 200:
+                    data = await r.json()
+                    if data:
+                        lines = []
+                        for key, entry in data.items():
+                            lines.append(f"• {key}: {entry['value']} (via {entry['source']})")
+                        return "\n".join(lines)
     except Exception:
         pass
     return ""
@@ -51,7 +54,6 @@ Règles de communication :
 
 Même rigueur qu'Euclide. Tu exécutes, tu ne bavards pas."""
 
-# Thalès : uniquement intents tech/infra
 INTENT_KEYWORDS = {
     "security_monitor": [
         "diagnostic", "santé", "health", "check", "status", "apis",
@@ -69,22 +71,25 @@ def detect_intent(message: str) -> tuple[str, str]:
     return "", ""
 
 
-def dispatch_to_hermes(intent: str, context: str = "", task: str = "") -> str:
+async def dispatch_to_hermes(intent: str, context: str = "", task: str = "") -> str:
     try:
-        r = requests.post(
-            f"{HERMES_URL}/dispatch",
-            json={"intent": intent, "context": context, "task": task, "source": "thales"},
-            headers={"x-api-key": HERMES_API_KEY},
-            timeout=90
-        )
-        if r.status_code == 200:
-            return r.json().get("result", "✅")
-        return f"❌ Hermès {r.status_code}: {r.text[:200]}"
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{HERMES_URL}/dispatch",
+                json={"intent": intent, "context": context, "task": task, "source": "thales"},
+                headers={"x-api-key": HERMES_API_KEY},
+                timeout=aiohttp.ClientTimeout(total=90)
+            ) as r:
+                if r.status == 200:
+                    data = await r.json()
+                    return data.get("result", "✅")
+                text = await r.text()
+                return f"❌ Hermès {r.status}: {text[:200]}"
     except Exception as e:
         return f"❌ Hermès injoignable: {str(e)[:200]}"
 
 
-def ask_claude(message: str, chat_id: int = 0) -> str:
+async def ask_claude(message: str, chat_id: int = 0) -> str:
     import anthropic
     client = anthropic.Anthropic()
 
@@ -92,7 +97,7 @@ def ask_claude(message: str, chat_id: int = 0) -> str:
     messages = history + [{"role": "user", "content": message}]
 
     system = SYSTEM_PROMPT
-    shared_ctx = _hermes_context_get()
+    shared_ctx = await _hermes_context_get()
     if shared_ctx:
         system += f"\n\n[Contexte partagé inter-agents]\n{shared_ctx}"
 
@@ -110,11 +115,11 @@ def ask_claude(message: str, chat_id: int = 0) -> str:
     return reply
 
 
-def process_message(message: str, chat_id: int = 0) -> str:
+async def process_message(message: str, chat_id: int = 0) -> str:
     intent, task = detect_intent(message)
     if intent:
-        result = dispatch_to_hermes(intent, message, task)
+        result = await dispatch_to_hermes(intent, message, task)
         mem_add(chat_id, "user", message)
         mem_add(chat_id, "assistant", result)
         return result
-    return ask_claude(message, chat_id)
+    return await ask_claude(message, chat_id)
